@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
-import ImageGrid from '../../components/ImageGrid';
-import UploadModal from '../../components/UploadModal';
-import { Plus } from 'lucide-react';
-import toast from 'react-hot-toast';
+import React, { useState, useEffect } from "react";
+import { supabase } from "../../lib/supabase";
+import ImageGrid from "../../components/ImageGrid";
+import UploadModal from "../../components/UploadModal";
+import { Plus } from "lucide-react";
+import toast from "react-hot-toast";
 
 export default function Photos() {
   const [images, setImages] = useState([]);
@@ -16,14 +16,16 @@ export default function Photos() {
 
   const fetchImages = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) return;
 
       const { data, error } = await supabase
-        .from('images')
-        .select('*, profiles(*)')
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: false });
+        .from("images")
+        .select("*, profiles(*)")
+        .eq("user_id", session.user.id)
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
       setImages(data || []);
@@ -33,7 +35,7 @@ export default function Photos() {
   };
 
   const handleImageSelect = (id: string) => {
-    setSelectedImages(prev => {
+    setSelectedImages((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(id)) {
         newSet.delete(id);
@@ -42,6 +44,48 @@ export default function Photos() {
       }
       return newSet;
     });
+  };
+
+  const handleUpload = async (files: File[], location: string) => {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) return;
+      const user = session?.user;
+      if (!user) throw new Error("No user");
+
+      const uploadPromises = files.map(async (file) => {
+        const fileExt = file.name.split(".").pop();
+        const fileName = `${Math.random()}.${fileExt}`;
+        const filePath = `${user.id}/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("images")
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("images").getPublicUrl(filePath);
+
+        const { error: dbError } = await supabase.from("images").insert({
+          url: publicUrl,
+          location,
+          user_id: user.id,
+        });
+
+        if (dbError) throw dbError;
+      });
+
+      await Promise.all(uploadPromises);
+      toast.success("Images uploaded successfully");
+      fetchImages();
+    } catch (error) {
+      toast.error("Failed to upload images");
+      console.error("Error:", error);
+    }
   };
 
   return (
@@ -66,7 +110,7 @@ export default function Photos() {
       <UploadModal
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
-        onUpload={fetchImages}
+        onUpload={handleUpload}
       />
     </div>
   );
